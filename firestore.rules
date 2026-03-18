@@ -1,0 +1,15 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow read/write to carriers and handlers (admin-only app, no auth in app)
+    match /carriers_land/{docId} {
+      allow read, write: if true;
+    }
+    match /carriers_water/{docId} {
+      allow read, write: if true;
+    }
+    match /handlers/{docId} {
+      allow read, write: if true;
+    }
+  }
+}
