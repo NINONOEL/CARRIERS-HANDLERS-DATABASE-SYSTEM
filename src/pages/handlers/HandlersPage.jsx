@@ -6,6 +6,7 @@ import { Icon } from "@iconify/react";
 import { MIMAROPA_PROVINCES, MUNICIPALITIES, NATURE_OF_BUSINESS, PROVINCE_COLORS } from "../../constants/mimaropa";
 import { FormField, inputCls } from "../../components/shared/FormField";
 import Select from "../../components/shared/Select";
+import MultiSelect from "../../components/shared/MultiSelect";
 import toast from "react-hot-toast";
 import { useParams } from "react-router-dom";
 
@@ -15,7 +16,7 @@ const emptyForm = {
   province: "", municipality: "", barangay: "",
   sex: "", birthDate: "",
   phoneNo: "", email: "",
-  natureOfBusiness: "",
+  natureOfBusiness: [],
   registrationNumber: "",
   typeOfApplication: "",
   validityDate: "", validity: "",
@@ -54,6 +55,10 @@ export default function HandlersPage() {
     e.preventDefault();
     if (!form.lastName || !form.firstName || !form.province || !form.municipality) {
       toast.error("Please fill in all required fields.");
+      return;
+    }
+    if (!Array.isArray(form.natureOfBusiness) || form.natureOfBusiness.length === 0) {
+      toast.error("Please select at least one Nature of Business.");
       return;
     }
     setSaving(true);
@@ -232,13 +237,14 @@ export default function HandlersPage() {
               <p className="text-xs font-bold text-gray-600 uppercase tracking-wider">Business Details</p>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <FormField label="Nature of Business" required>
-                <Select
+              <FormField label="Nature of Business (select up to 3)" required>
+                <MultiSelect
                   name="natureOfBusiness"
-                  value={form.natureOfBusiness}
-                  onChange={handleChange}
+                  value={Array.isArray(form.natureOfBusiness) ? form.natureOfBusiness : (form.natureOfBusiness ? [form.natureOfBusiness] : [])}
+                  onValueChange={(arr) => setForm((prev) => ({ ...prev, natureOfBusiness: arr }))}
                   options={NATURE_OF_BUSINESS.map((n) => ({ value: n, label: n }))}
                   placeholder="Select Nature of Business"
+                  maxSelected={3}
                 />
               </FormField>
               <FormField label="Registration Number">

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { collection, getDocs } from "firebase/firestore";
 import { db } from "../firebase/config";
 import { Icon } from "@iconify/react";
-import { MIMAROPA_PROVINCES, PROVINCE_COLORS } from "../constants/mimaropa";
+import { MIMAROPA_PROVINCES, PROVINCE_COLORS, NATURE_OF_BUSINESS } from "../constants/mimaropa";
 import { useNavigate } from "react-router-dom";
 
 function easeOutCubic(t) {
@@ -33,39 +33,115 @@ function animateCountUp({ from, to, durationMs, onUpdate }) {
   return () => cancelAnimationFrame(rafId);
 }
 
+function normalizeNature(v) {
+  if (!v) return "";
+  return String(v)
+    .trim()
+    .toLowerCase()
+    // normalize separators/spacing
+    .replace(/\s*\/\s*/g, " / ")
+    .replace(/\s*&\s*/g, " & ")
+    .replace(/\s+and\s+/g, " & ")
+    // collapse whitespace
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export default function Dashboard() {
   const [stats, setStats] = useState({ carriers: 0, handlers: 0, land: 0, water: 0 });
   const [loading, setLoading] = useState(true);
   const [animatedStats, setAnimatedStats] = useState({ carriers: 0, handlers: 0, land: 0, water: 0 });
+  const [natureCounts, setNatureCounts] = useState(() => {
+    const base = {};
+    NATURE_OF_BUSINESS.forEach((k) => { base[k] = 0; });
+    return base;
+  });
+  const [animatedNatureCounts, setAnimatedNatureCounts] = useState(() => {
+    const base = {};
+    NATURE_OF_BUSINESS.forEach((k) => { base[k] = 0; });
+    return base;
+  });
+  const [natureMeta, setNatureMeta] = useState({ missing: 0, unmatched: 0, matched: 0 });
   const navigate = useNavigate();
   const [animateKey, setAnimateKey] = useState(0);
 
   const resetAndAnimate = () => {
+    // Match Summary behavior even when Dashboard doesn't remount:
+    // reset displayed numbers before re-running the animation,
+    // but avoid a visible `0` flash by immediately seeding `1` when target > 0.
+    setAnimatedStats({
+      carriers: stats.carriers > 0 ? 1 : 0,
+      land: stats.land > 0 ? 1 : 0,
+      water: stats.water > 0 ? 1 : 0,
+      handlers: stats.handlers > 0 ? 1 : 0,
+    });
+    setAnimatedNatureCounts((prev) => {
+      const next = { ...prev };
+      for (const k of NATURE_OF_BUSINESS) next[k] = (natureCounts[k] || 0) > 0 ? 1 : 0;
+      return next;
+    });
     setAnimateKey((k) => k + 1);
+  };
+
+  const fetchStats = async () => {
+    const [landSnap, waterSnap, handlerSnap] = await Promise.all([
+      getDocs(collection(db, "carriers_land")),
+      getDocs(collection(db, "carriers_water")),
+      getDocs(collection(db, "handlers")),
+    ]);
+
+    const land = landSnap.size;
+    const water = waterSnap.size;
+    const handlers = handlerSnap.size;
+    setStats({ carriers: land + water, handlers, land, water });
+
+    const normalizedMap = {};
+    for (const label of NATURE_OF_BUSINESS) normalizedMap[normalizeNature(label)] = label;
+
+    const nextNature = {};
+    NATURE_OF_BUSINESS.forEach((k) => { nextNature[k] = 0; });
+    let missing = 0;
+    let unmatched = 0;
+    let matched = 0;
+    handlerSnap.forEach((d) => {
+      const row = d.data?.() || {};
+      const raw =
+        row.natureOfBusiness ??
+        row.nature_of_business ??
+        row.natureOfBusinessType ??
+        row.nature;
+      const values = Array.isArray(raw) ? raw : [raw];
+      let any = false;
+      for (const item of values) {
+        const normalized = normalizeNature(item);
+        if (!normalized) continue;
+        any = true;
+        const key = normalizedMap[normalized];
+        if (key) {
+          nextNature[key] += 1;
+          matched += 1;
+        } else {
+          unmatched += 1;
+        }
+      }
+      if (!any) missing += 1;
+    });
+    setNatureCounts(nextNature);
+    setNatureMeta({ missing, unmatched, matched });
   };
 
   useEffect(() => {
     // Start animation ASAP when Dashboard is visited.
     resetAndAnimate();
-
-    const fetchStats = async () => {
+    (async () => {
       try {
-        const [landSnap, waterSnap, handlerSnap] = await Promise.all([
-          getDocs(collection(db, "carriers_land")),
-          getDocs(collection(db, "carriers_water")),
-          getDocs(collection(db, "handlers")),
-        ]);
-        const land = landSnap.size;
-        const water = waterSnap.size;
-        const handlers = handlerSnap.size;
-        setStats({ carriers: land + water, handlers, land, water });
+        await fetchStats();
       } catch (e) {
         console.error(e);
       } finally {
         setLoading(false);
       }
-    };
-    fetchStats();
+    })();
   }, []);
 
   useEffect(() => {
@@ -96,14 +172,30 @@ export default function Dashboard() {
         durationMs: 2000,
         onUpdate: (v) => setAnimatedStats((prev) => ({ ...prev, handlers: v })),
       }),
+      ...NATURE_OF_BUSINESS.map((k) =>
+        animateCountUp({
+          from: 0,
+          to: natureCounts[k] || 0,
+          durationMs: 2000,
+          onUpdate: (v) => setAnimatedNatureCounts((prev) => ({ ...prev, [k]: v })),
+        })
+      ),
     ];
 
     return () => cleanups.forEach((c) => c && c());
-  }, [animateKey, loading, stats.carriers, stats.handlers, stats.land, stats.water]);
+  }, [animateKey, loading, stats.carriers, stats.handlers, stats.land, stats.water, natureCounts]);
 
   useEffect(() => {
     // Re-trigger animation even if user clicks "Dashboard" while already on it.
-    const handler = () => resetAndAnimate();
+    const handler = async () => {
+      // Refresh data so counts reflect recently edited/saved records.
+      try {
+        await fetchStats();
+      } catch (e) {
+        console.error(e);
+      }
+      resetAndAnimate();
+    };
     window.addEventListener("dashboard:animate", handler);
     return () => window.removeEventListener("dashboard:animate", handler);
   }, []);
@@ -137,10 +229,51 @@ export default function Dashboard() {
               </div>
               <span className="text-xs bg-white/20 rounded-full px-2 py-0.5">{c.sub}</span>
             </div>
-            <p className="text-2xl sm:text-3xl font-bold tabular-nums">{loading ? 0 : c.value}</p>
+            <p className="text-2xl sm:text-3xl font-bold tabular-nums">{c.value}</p>
             <p className="text-white/85 text-xs mt-1 font-medium">{c.label}</p>
           </div>
         ))}
+      </div>
+
+      {/* Handlers — Nature of Business */}
+      <div>
+        <h3 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
+          <Icon icon="mdi:briefcase" width={18} className="text-[#849C44]" />
+          Handlers – Nature of Business
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {NATURE_OF_BUSINESS.map((label) => (
+            <div
+              key={label}
+              className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-gray-500">Category</p>
+                  <p className="text-sm font-bold text-gray-800 truncate">{label}</p>
+                </div>
+                <div className="w-9 h-9 rounded-xl bg-[#f4f7e8] border border-[#849C44]/25 flex items-center justify-center flex-shrink-0">
+                  <Icon icon="mdi:account-group" width={18} className="text-[#637d28]" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-end justify-between">
+                <p className="text-2xl font-extrabold tabular-nums text-gray-900">
+                  {animatedNatureCounts[label] ?? 0}
+                </p>
+                <p className="text-xs text-gray-500">handlers</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="text-[11px] text-gray-500 mt-2">
+          {natureMeta.missing > 0 || natureMeta.unmatched > 0 ? (
+            <>
+              Note: {natureMeta.missing} record(s) have no Nature of Business, and {natureMeta.unmatched} record(s) have values that don’t match the 6 categories.
+            </>
+          ) : (
+            <>All handler records with Nature of Business are matched to the 6 categories.</>
+          )}
+        </p>
       </div>
 
       {/* Province Quick Access */}

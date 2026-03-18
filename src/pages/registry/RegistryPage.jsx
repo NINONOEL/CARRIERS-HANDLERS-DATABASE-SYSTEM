@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
   collection, getDocs, doc, updateDoc, deleteDoc,
-  query, orderBy, where
+  query, orderBy, where, writeBatch
 } from "firebase/firestore";
 import { db } from "../../firebase/config";
 import { sanitizeForFirestore } from "../../firebase/utils";
@@ -15,6 +15,7 @@ import { FormField, inputCls, selectCls } from "../../components/shared/FormFiel
 import toast from "react-hot-toast";
 import { useLocation } from "react-router-dom";
 import Select from "../../components/shared/Select";
+import MultiSelect from "../../components/shared/MultiSelect";
 
 const CARRIER_COLS = [
   { key: "no",                 label: "No." },
@@ -57,7 +58,65 @@ function Badge({ value }) {
 }
 
 function EditModal({ record, type, onClose, onSaved }) {
-  const [form, setForm] = useState({ ...record });
+  const isCarrier = type === "carriers_land" || type === "carriers_water";
+  const normalizeNature = (v) => {
+    if (!v) return "";
+    return String(v)
+      .trim()
+      .toLowerCase()
+      .replace(/\s*\/\s*/g, " / ")
+      .replace(/\s*&\s*/g, " & ")
+      .replace(/\s+and\s+/g, " & ")
+      .replace(/\s+/g, " ")
+      .trim();
+  };
+  const canonicalizeNatureArray = (arr) => {
+    const map = {};
+    for (const label of NATURE_OF_BUSINESS) map[normalizeNature(label)] = label;
+    const out = [];
+    for (const raw of Array.isArray(arr) ? arr : []) {
+      const key = map[normalizeNature(raw)];
+      if (key && !out.includes(key)) out.push(key);
+      else if (!key && raw && !out.includes(raw)) out.push(raw);
+      if (out.length >= 3) break;
+    }
+    return out;
+  };
+  const toDateInput = (v) => {
+    if (!v) return "";
+    // Firestore Timestamp
+    if (typeof v === "object" && typeof v.toDate === "function") {
+      const d = v.toDate();
+      return Number.isNaN(d.getTime()) ? "" : d.toISOString().slice(0, 10);
+    }
+    // JS Date
+    if (v instanceof Date) return Number.isNaN(v.getTime()) ? "" : v.toISOString().slice(0, 10);
+    // ISO-ish string (keep yyyy-mm-dd)
+    const s = String(v);
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    return "";
+  };
+
+  const coerceNatureArray = (v) => {
+    if (!v) return [];
+    if (Array.isArray(v)) return v.filter(Boolean).slice(0, 3);
+    const s = String(v).trim();
+    if (!s) return [];
+    // If stored as comma-separated string in some records, split it.
+    if (s.includes(",")) return s.split(",").map((x) => x.trim()).filter(Boolean).slice(0, 3);
+    return [s];
+  };
+
+  const [form, setForm] = useState(() => {
+    const base = { ...record };
+    if (!isCarrier) {
+      base.natureOfBusiness = canonicalizeNatureArray(coerceNatureArray(base.natureOfBusiness));
+    }
+    // Normalize date inputs so they appear in the edit modal.
+    base.birthDate = toDateInput(base.birthDate);
+    base.validityDate = toDateInput(base.validityDate);
+    return base;
+  });
   const [saving, setSaving] = useState(false);
 
   const handleChange = (e) => {
@@ -71,6 +130,11 @@ function EditModal({ record, type, onClose, onSaved }) {
       const collName = type === "carriers_land" || type === "carriers_water" ? type : "handlers";
       const ref = doc(db, collName, record.id);
       const { id, ...rest } = form;
+      if (!isCarrier) {
+        rest.natureOfBusiness = canonicalizeNatureArray(
+          Array.isArray(rest.natureOfBusiness) ? rest.natureOfBusiness : coerceNatureArray(rest.natureOfBusiness)
+        );
+      }
       await updateDoc(ref, sanitizeForFirestore(rest));
       toast.success("Record updated!");
       onSaved({ ...form });
@@ -82,8 +146,6 @@ function EditModal({ record, type, onClose, onSaved }) {
       setSaving(false);
     }
   };
-
-  const isCarrier = type === "carriers_land" || type === "carriers_water";
 
   const modalContent = (
     <div className="modal-overlay-full z-50 flex items-center justify-center bg-black/50 backdrop-blur-md p-4 overflow-y-auto">
@@ -196,10 +258,14 @@ function EditModal({ record, type, onClose, onSaved }) {
             <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
             <div className="grid grid-cols-2 gap-3">
               <FormField label="Nature of Business">
-                <select name="natureOfBusiness" value={form.natureOfBusiness || ""} onChange={handleChange} className={selectCls}>
-                  <option value="">Select</option>
-                  {NATURE_OF_BUSINESS.map((n) => <option key={n} value={n}>{n}</option>)}
-                </select>
+                <MultiSelect
+                  name="natureOfBusiness"
+                  value={Array.isArray(form.natureOfBusiness) ? form.natureOfBusiness : (form.natureOfBusiness ? [form.natureOfBusiness] : [])}
+                  onValueChange={(arr) => setForm((prev) => ({ ...prev, natureOfBusiness: arr }))}
+                  options={NATURE_OF_BUSINESS.map((n) => ({ value: n, label: n }))}
+                  placeholder="Select"
+                  maxSelected={3}
+                />
               </FormField>
               <FormField label="Registration No.">
                 <input name="registrationNumber" value={form.registrationNumber || ""} onChange={handleChange} className={inputCls} />
@@ -286,6 +352,103 @@ export default function RegistryPage({ mode }) {
   const [page, setPage]                     = useState(1);
   const pageSize = 10;
 
+  const normalizeNature = (v) => {
+    if (!v) return "";
+    return String(v)
+      .trim()
+      .toLowerCase()
+      .replace(/\s*\/\s*/g, " / ")
+      .replace(/\s*&\s*/g, " & ")
+      .replace(/\s+and\s+/g, " & ")
+      .replace(/\s+/g, " ")
+      .trim();
+  };
+
+  const canonicalizeNatureArray = (arr) => {
+    const map = {};
+    for (const label of NATURE_OF_BUSINESS) map[normalizeNature(label)] = label;
+    const out = [];
+    for (const raw of Array.isArray(arr) ? arr : []) {
+      const key = map[normalizeNature(raw)];
+      const chosen = key || (raw ? String(raw).trim() : "");
+      if (chosen && !out.includes(chosen)) out.push(chosen);
+      if (out.length >= 3) break;
+    }
+    return out;
+  };
+
+  const coerceNatureArray = (v) => {
+    if (!v) return [];
+    if (Array.isArray(v)) return v.filter(Boolean);
+    const s = String(v).trim();
+    if (!s) return [];
+    if (s.includes(",")) return s.split(",").map((x) => x.trim()).filter(Boolean);
+    return [s];
+  };
+
+  const normalizeAllHandlersNature = async () => {
+    if (!window.confirm("Normalize Nature of Business for ALL handlers records?\n\nThis will standardize values to match the dropdown labels.")) {
+      return;
+    }
+
+    const tId = toast.loading("Normalizing Nature of Business…");
+    try {
+      const snap = await getDocs(collection(db, "handlers"));
+      let scanned = 0;
+      let toUpdate = 0;
+      let updated = 0;
+
+      let batch = writeBatch(db);
+      let batchCount = 0;
+
+      for (const d of snap.docs) {
+        scanned += 1;
+        const row = d.data() || {};
+
+        const raw =
+          row.natureOfBusiness ??
+          row.nature_of_business ??
+          row.natureOfBusinessType ??
+          row.nature;
+
+        const nextArr = canonicalizeNatureArray(coerceNatureArray(raw));
+
+        // If empty, keep as-is (user can set later).
+        if (nextArr.length === 0) continue;
+
+        const currentArr = canonicalizeNatureArray(coerceNatureArray(row.natureOfBusiness));
+        const same =
+          currentArr.length === nextArr.length &&
+          currentArr.every((v, i) => v === nextArr[i]);
+
+        if (same) continue;
+
+        toUpdate += 1;
+        batch.update(d.ref, sanitizeForFirestore({ natureOfBusiness: nextArr }));
+        batchCount += 1;
+
+        if (batchCount >= 400) {
+          await batch.commit();
+          updated += batchCount;
+          batch = writeBatch(db);
+          batchCount = 0;
+        }
+      }
+
+      if (batchCount > 0) {
+        await batch.commit();
+        updated += batchCount;
+      }
+
+      toast.success(`Done. Scanned ${scanned}, updated ${updated} record(s).`, { id: tId });
+      // Refresh table so you see standardized values immediately.
+      await fetchRecords();
+    } catch (e) {
+      console.error(e);
+      toast.error("Normalization failed.", { id: tId });
+    }
+  };
+
   // Allow deep-linking (Dashboard quick access):
   // `/registry/carriers?province=Palawan` (+ optional `subType=land|water`)
   useEffect(() => {
@@ -365,6 +528,10 @@ export default function RegistryPage({ mode }) {
     if (key === "withSeminarCertificate") return row[key]
       ? <span className="text-green-600"><Icon icon="mdi:check-circle" width={16} /></span>
       : <span className="text-red-400"><Icon icon="mdi:close-circle" width={16} /></span>;
+    if (key === "natureOfBusiness") {
+      const v = row[key];
+      if (Array.isArray(v)) return v.join(", ");
+    }
     return row[key] || <span className="text-gray-300">—</span>;
   };
 
@@ -389,9 +556,21 @@ export default function RegistryPage({ mode }) {
             </p>
           </div>
         </div>
-        <button onClick={fetchRecords} className="bg-white/20 hover:bg-white/30 rounded-lg p-2 transition-all" title="Refresh">
-          <Icon icon="mdi:refresh" width={18} />
-        </button>
+        <div className="flex items-center gap-2">
+          {mode === "handlers" && (
+            <button
+              onClick={normalizeAllHandlersNature}
+              className="bg-white/20 hover:bg-white/30 rounded-lg px-3 py-2 transition-all text-xs font-semibold flex items-center gap-2"
+              title="Normalize Nature of Business to match dropdown labels"
+            >
+              <Icon icon="mdi:format-letter-case" width={16} />
+              <span className="hidden sm:inline">Normalize NOB</span>
+            </button>
+          )}
+          <button onClick={fetchRecords} className="bg-white/20 hover:bg-white/30 rounded-lg p-2 transition-all" title="Refresh">
+            <Icon icon="mdi:refresh" width={18} />
+          </button>
+        </div>
       </div>
 
       {/* Sub-type toggle for carriers */}
