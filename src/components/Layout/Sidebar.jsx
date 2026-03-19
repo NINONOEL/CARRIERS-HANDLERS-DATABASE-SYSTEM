@@ -44,7 +44,7 @@ const navItems = [
 
 export default function Sidebar({ collapsed, onNavigate }) {
   const location = useLocation();
-  const [openMenus, setOpenMenus] = useState({ Carriers: true, Handlers: true, Registry: true });
+  const [openMenus, setOpenMenus] = useState({ Carriers: false, Handlers: false, Registry: false });
 
   const toggleMenu = (label) => {
     setOpenMenus((prev) => ({ ...prev, [label]: !prev[label] }));
