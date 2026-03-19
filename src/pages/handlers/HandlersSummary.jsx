@@ -30,6 +30,20 @@ function animateCountUp({ from, to, durationMs, onUpdate }) {
   return () => cancelAnimationFrame(rafId);
 }
 
+function parseDateLike(value) {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (typeof value?.toDate === "function") {
+    const d = value.toDate();
+    return d instanceof Date && !Number.isNaN(d.getTime()) ? d : null;
+  }
+  if (typeof value === "string") {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
 export default function HandlersSummary() {
   const [data, setData]     = useState({});
   const [loading, setLoading] = useState(true);
@@ -41,6 +55,8 @@ export default function HandlersSummary() {
     const fetch = async () => {
       try {
         const snap = await getDocs(collection(db, "handlers"));
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const combined = {};
         MIMAROPA_PROVINCES.forEach((p) => {
           combined[p] = { new: 0, renew: 0, updated: 0, expired: 0, total: 0 };
@@ -53,7 +69,11 @@ export default function HandlersSummary() {
             if (d.typeOfApplication === "New")   combined[prov].new++;
             if (d.typeOfApplication === "Renew") combined[prov].renew++;
             if (d.validity === "Updated") combined[prov].updated++;
-            if (d.validity === "Expired") combined[prov].expired++;
+            const dt = parseDateLike(d.validityDate);
+            if (dt) {
+              const dayOnly = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+              if (dayOnly < today) combined[prov].expired++;
+            }
           }
         });
         setData(combined);

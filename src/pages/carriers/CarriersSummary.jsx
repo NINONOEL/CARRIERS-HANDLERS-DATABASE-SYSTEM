@@ -30,6 +30,20 @@ function animateCountUp({ from, to, durationMs, onUpdate }) {
   return () => cancelAnimationFrame(rafId);
 }
 
+function parseDateLike(value) {
+  if (!value) return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  if (typeof value?.toDate === "function") {
+    const d = value.toDate();
+    return d instanceof Date && !Number.isNaN(d.getTime()) ? d : null;
+  }
+  if (typeof value === "string") {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+}
+
 function SummaryCard({ label, value, icon, color }) {
   return (
     <div className={`flex items-center gap-3 p-3 rounded-lg ${color}`}>
@@ -56,6 +70,8 @@ export default function CarriersSummary() {
           getDocs(collection(db, "carriers_land")),
           getDocs(collection(db, "carriers_water")),
         ]);
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
         const combined = {};
         MIMAROPA_PROVINCES.forEach((p) => {
@@ -73,7 +89,11 @@ export default function CarriersSummary() {
             if (d.typeOfApplication === "New")   combined[prov].land.new++;
             if (d.typeOfApplication === "Renew") combined[prov].land.renew++;
             if (d.validity === "Updated") combined[prov].land.updated++;
-            if (d.validity === "Expired") combined[prov].land.expired++;
+            const dt = parseDateLike(d.validityDate);
+            if (dt) {
+              const dayOnly = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+              if (dayOnly < today) combined[prov].land.expired++;
+            }
           }
         });
 
@@ -85,7 +105,11 @@ export default function CarriersSummary() {
             if (d.typeOfApplication === "New")   combined[prov].water.new++;
             if (d.typeOfApplication === "Renew") combined[prov].water.renew++;
             if (d.validity === "Updated") combined[prov].water.updated++;
-            if (d.validity === "Expired") combined[prov].water.expired++;
+            const dt = parseDateLike(d.validityDate);
+            if (dt) {
+              const dayOnly = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+              if (dayOnly < today) combined[prov].water.expired++;
+            }
           }
         });
 

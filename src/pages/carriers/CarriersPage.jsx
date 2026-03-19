@@ -7,6 +7,7 @@ import { MIMAROPA_PROVINCES, MUNICIPALITIES, BODY_TYPES, PROVINCE_COLORS } from 
 import { FormField, inputCls } from "../../components/shared/FormField";
 import Select from "../../components/shared/Select";
 import toast from "react-hot-toast";
+import { useSearchParams } from "react-router-dom";
 
 const transportLabel = { land: "Land Transport", water: "Water Transport" };
 const transportIcon  = { land: "mdi:truck",       water: "mdi:ferry" };
@@ -52,6 +53,7 @@ const emptyForm = {
 };
 
 export default function CarriersPage({ type }) {
+  const [searchParams] = useSearchParams();
   const [selectedProvince, setSelectedProvince] = useState(null);
   const [form, setForm]     = useState(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -93,6 +95,22 @@ export default function CarriersPage({ type }) {
     }
     return () => cleanups.forEach((c) => c && c());
   }, [type, selectedProvince, count]);
+
+  useEffect(() => {
+    const provinceFromQuery = searchParams.get("province");
+    if (!provinceFromQuery) return;
+    if (!MIMAROPA_PROVINCES.includes(provinceFromQuery)) return;
+    setSelectedProvince(provinceFromQuery);
+    setForm((prev) => ({ ...prev, province: provinceFromQuery }));
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (!selectedProvince) return;
+    // Ensure user lands at the top of the form view.
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }, [selectedProvince]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;

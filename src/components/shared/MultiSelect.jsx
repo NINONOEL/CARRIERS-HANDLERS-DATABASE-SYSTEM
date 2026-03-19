@@ -17,6 +17,8 @@ export default function MultiSelect({
   className = "",
   buttonClassName = "",
 }) {
+  const isUnlimited = !Number.isFinite(maxSelected);
+
   const rootRef = useRef(null);
   const [open, setOpen] = useState(false);
 
@@ -50,7 +52,7 @@ export default function MultiSelect({
       emit(selectedValues.filter((x) => x !== v));
       return;
     }
-    if (selectedValues.length >= maxSelected) return;
+    if (!isUnlimited && selectedValues.length >= maxSelected) return;
     emit([...selectedValues, v]);
   };
 
@@ -132,7 +134,13 @@ export default function MultiSelect({
               <Icon icon="mdi:close-circle" width={14} />
             </button>
           )}
-          <span className="text-[11px] text-gray-400">{selectedValues.length}/{maxSelected}</span>
+          {!isUnlimited ? (
+            <span className="text-[11px] text-gray-400">
+              {selectedValues.length}/{maxSelected}
+            </span>
+          ) : (
+            <span className="text-[11px] text-gray-400">{selectedValues.length} selected</span>
+          )}
           <Icon
             icon="mdi:chevron-down"
             width={18}
@@ -146,7 +154,9 @@ export default function MultiSelect({
           <div className="max-h-60 overflow-auto py-1">
             {resolvedOptions.map((opt) => {
               const isSelected = selectedSet.has(opt.value);
-              const isDisabled = !!opt.disabled || (!isSelected && selectedValues.length >= maxSelected);
+              const isDisabled =
+                !!opt.disabled ||
+                (!isSelected && !isUnlimited && selectedValues.length >= maxSelected);
               return (
                 <button
                   key={opt.value}
