@@ -267,8 +267,8 @@ function ProvincePieChart({
 
   return (
     <div className="w-full">
-      <div className="flex items-start gap-4">
-        <div className="relative flex-shrink-0" style={{ width: pieSize, height: pieSize }}>
+      <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4">
+        <div className="relative flex-shrink-0 mx-auto sm:mx-0" style={{ width: pieSize, height: pieSize }}>
           {total <= 0 ? (
             <div className="w-full h-full rounded-full border border-gray-200 bg-white flex items-center justify-center text-[12px] text-gray-500">
               No data
@@ -342,15 +342,15 @@ function ProvincePieChart({
         </div>
 
         {showLegend && (
-          <div className="flex-1 pt-1 flex flex-col">
+          <div className="w-full sm:flex-1 min-w-0 pt-1 flex flex-col">
             <div className="space-y-1.5">
               {entries.map((e) => (
                 <div key={e.province} className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="w-2.5 h-2.5 rounded-sm" style={{ background: provinceSliceColor(e.province) }} />
-                    <span className="text-[12px] text-gray-700 truncate">{e.province}</span>
+                    <span className="text-[11px] sm:text-[12px] text-gray-700 truncate">{e.province}</span>
                   </div>
-                  <span className="w-10 text-right text-[12px] font-extrabold text-gray-900 tabular-nums">
+                  <span className="w-12 text-right text-[12px] font-extrabold text-gray-900 tabular-nums">
                     {e.value}
                   </span>
                 </div>
@@ -361,7 +361,7 @@ function ProvincePieChart({
             <div className="mt-2 pt-2 border-t border-gray-200">
               <div className="flex items-center justify-between gap-3 bg-[#f4f7e8] border border-[#849C44]/20 rounded-lg px-2 py-1.5">
                 <span className="text-[11px] font-bold text-[#637d28]">TOTAL</span>
-                <span className="w-10 text-right text-[13px] font-extrabold tabular-nums text-gray-900">
+                <span className="w-12 text-right text-[13px] font-extrabold tabular-nums text-gray-900">
                   {footerValue}
                 </span>
               </div>
