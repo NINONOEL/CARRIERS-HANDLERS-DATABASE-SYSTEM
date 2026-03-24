@@ -186,7 +186,7 @@ function ProvinceValueBarChart({
 function provinceSliceColor(province) {
   // Fixed palette so Land/Water pie charts look consistent.
   const map = {
-    "Oriental Mindoro": "#F59E0B", // amber
+    "Oriental Mindoro": "#E11D48", // rose
     "Occidental Mindoro": "#F97316", // orange
     Palawan: "#14B8A6", // teal
     Marinduque: "#3B82F6", // blue
